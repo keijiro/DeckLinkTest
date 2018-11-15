@@ -159,7 +159,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="Common.h" />
     <ClInclude Include="DeckLinkAPI_h.h" />
+    <ClInclude Include="InputCallback.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="DeckLinkAPI_i.c" />

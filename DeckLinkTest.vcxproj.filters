@@ -21,6 +21,12 @@
     <ClInclude Include="DeckLinkAPI_h.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Common.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="InputCallback.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="DeckLinkTest.cpp">
