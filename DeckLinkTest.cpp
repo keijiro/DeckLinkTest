@@ -7,17 +7,17 @@ class NotificationCallback : public IDeckLinkInputCallback
 public:
     NotificationCallback(IDeckLinkInput* input) : refCount_(1), input_(input) {}
 
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv)
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) override
     {
         return E_NOINTERFACE;
     }
 
-    ULONG STDMETHODCALLTYPE AddRef()
+    ULONG STDMETHODCALLTYPE AddRef() override
     {
         return InterlockedIncrement(&refCount_);
     }
 
-    ULONG STDMETHODCALLTYPE Release()
+    ULONG STDMETHODCALLTYPE Release() override
     {
         auto val = InterlockedDecrement(&refCount_);
         if (val == 0) delete this;
@@ -36,7 +36,7 @@ public:
         BMDVideoInputFormatChangedEvents notificationEvents,
         IDeckLinkDisplayMode* newDisplayMode,
         BMDDetectedVideoInputFormatFlags detectedSignalFlags
-    )
+    ) override
     {
         BSTR name;
         newDisplayMode->GetName(&name);
@@ -58,8 +58,23 @@ public:
     HRESULT STDMETHODCALLTYPE VideoInputFrameArrived(
         IDeckLinkVideoInputFrame* videoFrame,
         IDeckLinkAudioInputPacket* audioPacket
-    )
+    ) override
     {
+        if (videoFrame == nullptr) return S_OK;
+
+        static int counter = 0;
+
+        if (counter++ % 15 == 0)
+        {
+            std::printf(
+                "w:%d, h:%d, fmt:%x, flg:%x\n",
+                videoFrame->GetWidth(),
+                videoFrame->GetHeight(),
+                videoFrame->GetPixelFormat(),
+                videoFrame->GetFlags()
+            );
+        }
+
         return S_OK;
     }
 
