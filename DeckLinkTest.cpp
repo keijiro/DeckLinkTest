@@ -1,3 +1,4 @@
+#include <cassert>
 #include <cstdio>
 #include <stdexcept>
 #include "DeckLinkAPI_h.h"
@@ -122,6 +123,15 @@ int main()
     // Video input with a default video mode
     result = input->EnableVideoInput(bmdModeNTSC, bmdFormat10BitYUV, bmdVideoInputEnableFormatDetection);
     if (FAILED(result)) throw std::runtime_error("Failed to enable video input.");
+
+    // Video output
+    IDeckLinkOutput* output;
+    result = deckLink->QueryInterface(IID_IDeckLinkOutput, (void**)&output);
+    assert(SUCCEEDED(result));
+
+    // Enable video output with 1080i59.94
+    result = output->EnableVideoOutput(bmdModeHD1080i5994, bmdVideoOutputFlagDefault);
+    assert(SUCCEEDED(result));
 
     // Start streaming and wait for user interaction.
     result = input->StartStreams();

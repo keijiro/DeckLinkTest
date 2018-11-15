@@ -1,0 +1,5 @@
+*.h       text eol=crlf
+*.c       text eol=crlf
+*.cpp     text eol=crlf
+*.vcxproj text eol=crlf
+*.filters text eol=crlf
