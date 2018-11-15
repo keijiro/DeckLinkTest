@@ -44,22 +44,20 @@ public:
             bmdModeNTSC, bmdFormat10BitYUV,
             bmdVideoInputEnableFormatDetection
         ));
+        AssertSuccess(input_->StartStreams());
 
         // Enable video output with 1080i59.94.
         AssertSuccess(output_->EnableVideoOutput(
             bmdModeHD1080i5994, bmdVideoOutputFlagDefault
         ));
 
-        // Start streaming with a sender thread.
-        AssertSuccess(input_->StartStreams());
-        terminate_ = false;
-        std::thread t([=]() { SenderThread(); });
+        // Start a sender thread, wait for user interaction, then stop it.
+        auto terminate = false;
+        std::thread t([&terminate, this](){ SenderThread(terminate); });
 
-        // Wait for user interaction.
         getchar();
 
-        // Stop the sender thread.
-        terminate_ = true;
+        terminate = true;
         t.join();
 
         // Stop and disable.
@@ -72,31 +70,37 @@ private:
 
     IDeckLinkInput* input_;
     IDeckLinkOutput* output_;
-
     IDeckLinkMutableVideoFrame* receiveBuffer_;
     IDeckLinkMutableVideoFrame* sendBuffer_;
-
     Receiver* receiver_;
 
-    bool terminate_;
-
-    void SenderThread()
+    void SenderThread(bool& terminate)
     {
-        for (auto i = 0; !terminate_; i++)
+        for (auto count = 0u; !terminate; count += 2)
         {
             receiver_->LockBuffer();
 
             std::uint32_t* p_i;
             std::uint32_t* p_o;
+
             receiveBuffer_->GetBytes(reinterpret_cast<void**>(&p_i));
             sendBuffer_->GetBytes(reinterpret_cast<void**>(&p_o));
 
-            for (auto y = 0; y < 1080 / 2; y++)
-                for (auto x = 0; x < 1920; x++)
-                    *(p_o++) = *(p_i++) + ((x + i) & 0xff) * 0x10101 + 0x7f000000;
+            for (auto i = 0; i < 1920 * 1080; i++)
+            {
+                auto c = *(p_i++);
+                auto r = (c >>  8) & 0xff;
+                auto g = (c >> 16) & 0xff;
+                auto b = (c >> 24) & 0xff;
+
+                r = (r + count) & 0xff;
+                g = (g + count) & 0xff;
+                b = (b + count) & 0xff;
+
+                *(p_o++) = 0xffu | (r << 8) | (g << 16) | (b << 24);
+            }
 
             receiver_->UnlockBuffer();
-
             output_->DisplayVideoFrameSync(sendBuffer_);
         }
     }
