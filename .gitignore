@@ -5,6 +5,4 @@ Desktop.ini
 /.vs
 /x64
 /Win32
-/DeckLinkTest/x64
-/DeckLinkTest/Win32
 *.vcxproj.user

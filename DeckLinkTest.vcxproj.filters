@@ -31,7 +31,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <Midl Include="..\..\Blackmagic_DeckLink_SDK\Win\include\DeckLinkAPI.idl">
+    <Midl Include="..\Blackmagic_DeckLink_SDK\Win\include\DeckLinkAPI.idl">
       <Filter>DeckLinkAPI</Filter>
     </Midl>
   </ItemGroup>

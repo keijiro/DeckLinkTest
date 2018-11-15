@@ -72,19 +72,19 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>$(SolutionDir)..\Blackmagic_DeckLink_SDK\Win\Include;$(IncludePath)</IncludePath>
+    <IncludePath>..\Blackmagic_DeckLink_SDK\Win\Include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>$(SolutionDir)..\Blackmagic_DeckLink_SDK\Win\Include;$(IncludePath)</IncludePath>
+    <IncludePath>..\Blackmagic_DeckLink_SDK\Win\Include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
-    <IncludePath>$(SolutionDir)..\Blackmagic_DeckLink_SDK\Win\Include;$(IncludePath)</IncludePath>
+    <IncludePath>..\Blackmagic_DeckLink_SDK\Win\Include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
-    <IncludePath>$(SolutionDir)..\Blackmagic_DeckLink_SDK\Win\Include;$(IncludePath)</IncludePath>
+    <IncludePath>..\Blackmagic_DeckLink_SDK\Win\Include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -166,7 +166,7 @@
     <ClCompile Include="DeckLinkTest.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <Midl Include="..\..\Blackmagic_DeckLink_SDK\Win\include\DeckLinkAPI.idl" />
+    <Midl Include="..\Blackmagic_DeckLink_SDK\Win\include\DeckLinkAPI.idl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
