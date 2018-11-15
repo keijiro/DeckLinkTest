@@ -136,7 +136,22 @@ int main()
     // Start streaming and wait for user interaction.
     result = input->StartStreams();
     if (FAILED(result)) throw std::runtime_error("Failed to start streaming.");
-    std::getchar();
+
+    //    std::getchar();
+
+    for (auto i = 0;; i++)
+    {
+        IDeckLinkMutableVideoFrame* frame;
+        output->CreateVideoFrame(1920, 1080, 1920 * 4, bmdFormat8BitARGB, 0, &frame);
+        std::uint32_t* buffer;
+        frame->GetBytes((void**)&buffer);
+        for (auto y = 0; y < 1080; y++)
+            for (auto x = 0; x < 1920; x++)
+                *(buffer++) = ((x + i) & 0xff) * 0x10101 + 0x7f000000;
+        output->DisplayVideoFrameSync(frame);
+        frame->Release();
+    }
+
     input->StopStreams();
 
     // Finalization
@@ -146,5 +161,6 @@ int main()
     attributes->Release();
     input->Release();
     notificationCallback->Release();
+    output->Release();
     return 0;
 }
