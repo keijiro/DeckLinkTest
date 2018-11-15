@@ -24,7 +24,10 @@
     <ClInclude Include="Common.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="InputCallback.h">
+    <ClInclude Include="Receiver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DeckLinkTest.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
