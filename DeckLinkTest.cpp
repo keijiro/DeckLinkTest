@@ -1,5 +1,6 @@
 #include "Common.h"
 #include "InputCallback.h"
+#include <thread>
 
 namespace decklink_test
 {
@@ -33,11 +34,18 @@ namespace decklink_test
             // Set the input callback.
             inputCallback_ = new InputCallback(input_);
             AssertSuccess(input_->SetCallback(inputCallback_));
+
+            // Allocate an output buffer.
+            AssertSuccess(output_->CreateVideoFrame(
+                1920, 1080, 1920 * 4, bmdFormat8BitARGB, 0, &buffer_
+            ));
+            inputCallback_->SetBuffer(buffer_);
         }
 
         ~Test()
         {
             // Finalization
+            buffer_->Release();
             input_->Release();
             output_->Release();
             inputCallback_->Release();
@@ -60,22 +68,13 @@ namespace decklink_test
             // Start streaming
             AssertSuccess(input_->StartStreams());
 
-            for (auto i = 0;; i++)
-            {
-                IDeckLinkMutableVideoFrame* frame;
-                output_->CreateVideoFrame(1920, 1080, 1920 * 4, bmdFormat8BitARGB, 0, &frame);
+            terminate_ = false;
+            std::thread t([=](){ SenderThread(); });
 
-                std::uint32_t* buffer;
-                frame->GetBytes(reinterpret_cast<void**>(&buffer));
-
-                for (auto y = 0; y < 1080; y++)
-                    for (auto x = 0; x < 1920; x++)
-                        *(buffer++) = ((x + i) & 0xff) * 0x10101 + 0x7f000000;
-
-                output_->DisplayVideoFrameSync(frame);
-
-                frame->Release();
-            }
+            getchar();
+            
+            terminate_ = true;
+            t.join();
 
             // Stop and disable
             input_->StopStreams();
@@ -89,6 +88,27 @@ namespace decklink_test
         IDeckLinkInput* input_;
         InputCallback* inputCallback_;
         IDeckLinkOutput* output_;
+        IDeckLinkMutableVideoFrame* buffer_;
+        bool terminate_;
+
+        void SenderThread()
+        {
+            for (auto i = 0; !terminate_; i++)
+            {
+                inputCallback_->LockBuffer();
+
+                std::uint32_t* raw;
+                buffer_->GetBytes(reinterpret_cast<void**>(&raw));
+
+                for (auto y = 0; y < 1080 / 2; y++)
+                    for (auto x = 0; x < 1920; x++)
+                        *(raw++) = ((x + i) & 0xff) * 0x10101 + 0x7f000000;
+
+                inputCallback_->UnlockBuffer();
+
+                output_->DisplayVideoFrameSync(buffer_);
+            }
+        }
     };
 }
 

@@ -2,15 +2,27 @@
 
 #include "Common.h"
 #include <cstdio>
+#include <mutex>
 
 namespace decklink_test
 {
     class InputCallback : public IDeckLinkInputCallback
     {
     public:
+
         InputCallback(IDeckLinkInput* input)
-        : refCount_(1), input_(input)
+        : refCount_(1), input_(input), buffer_(nullptr)
         {
+            AssertSuccess(CoCreateInstance(
+                CLSID_CDeckLinkVideoConversion, nullptr, CLSCTX_ALL,
+                IID_IDeckLinkVideoConversion, reinterpret_cast<void**>(&converter_)
+            ));
+        }
+
+        ~InputCallback()
+        {
+            converter_->Release();
+            if (buffer_ != nullptr) buffer_->Release();
         }
 
         HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) override
@@ -30,25 +42,12 @@ namespace decklink_test
             return val;
         }
 
-        static BMDPixelFormat FormatFlagsToPixelFormat(
-            BMDDetectedVideoInputFormatFlags flags
-        )
-        {
-            return flags == bmdDetectedVideoInputRGB444 ?
-                bmdFormat10BitRGB : bmdFormat10BitYUV;
-        }
-
         HRESULT STDMETHODCALLTYPE VideoInputFormatChanged(
             BMDVideoInputFormatChangedEvents notificationEvents,
             IDeckLinkDisplayMode* newDisplayMode,
             BMDDetectedVideoInputFormatFlags detectedSignalFlags
         ) override
         {
-            BSTR name;
-            newDisplayMode->GetName(&name);
-            std::printf("Video input: %S\n", name);
-            SysFreeString(name);
-
             input_->PauseStreams();
             input_->EnableVideoInput(
                 newDisplayMode->GetDisplayMode(),
@@ -57,7 +56,6 @@ namespace decklink_test
             );
             input_->FlushStreams();
             input_->StartStreams();
-
             return S_OK;
         }
 
@@ -66,27 +64,46 @@ namespace decklink_test
             IDeckLinkAudioInputPacket* audioPacket
         ) override
         {
-            if (videoFrame == nullptr) return S_OK;
-
-            static int counter = 0;
-
-            if (counter++ % 15 == 0)
+            if (videoFrame != nullptr && buffer_ != nullptr)
             {
-                std::printf(
-                    "w:%d, h:%d, fmt:%x, flg:%x\n",
-                    videoFrame->GetWidth(),
-                    videoFrame->GetHeight(),
-                    videoFrame->GetPixelFormat(),
-                    videoFrame->GetFlags()
-                );
+                bufferLock_.lock();
+                converter_->ConvertFrame(videoFrame, buffer_);
+                bufferLock_.unlock();
             }
-
             return S_OK;
         }
 
-    private:
-        IDeckLinkInput* input_;
-        ULONG refCount_;
-    };
+        void SetBuffer(IDeckLinkMutableVideoFrame* buffer)
+        {
+            if (buffer_ != nullptr) buffer->Release();
+            buffer_ = buffer;
+            if (buffer_ != nullptr) buffer->AddRef();
+        }
 
+        void LockBuffer()
+        {
+            bufferLock_.lock();
+        }
+
+        void UnlockBuffer()
+        {
+            bufferLock_.unlock();
+        }
+
+    private:
+
+        ULONG refCount_;
+        IDeckLinkInput* input_;
+        IDeckLinkVideoConversion* converter_;
+        IDeckLinkMutableVideoFrame* buffer_;
+        std::mutex bufferLock_;
+
+        static BMDPixelFormat FormatFlagsToPixelFormat(
+            BMDDetectedVideoInputFormatFlags flags
+        )
+        {
+            return flags == bmdDetectedVideoInputRGB444 ?
+                bmdFormat10BitRGB : bmdFormat10BitYUV;
+        }
+    };
 }
