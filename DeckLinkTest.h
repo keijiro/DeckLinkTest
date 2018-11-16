@@ -12,17 +12,8 @@ public:
     {
         std::tie(input_, output_) = Utility::RetrieveDeckLinkInputOutput();
 
-        // Receive/send buffer
-        AssertSuccess(output_->CreateVideoFrame(
-            1920, 1080, 1920 * 4, bmdFormat8BitARGB, 0, &receiveBuffer_
-        ));
-        AssertSuccess(output_->CreateVideoFrame(
-            1920, 1080, 1920 * 4, bmdFormat8BitARGB, 0, &sendBuffer_
-        ));
-
         // Frame receiver
         receiver_ = new Receiver(input_);
-        receiver_->SetBuffer(receiveBuffer_);
         AssertSuccess(input_->SetCallback(receiver_));
     }
 
@@ -31,8 +22,6 @@ public:
         // Finalization
         input_->Release();
         output_->Release();
-        receiveBuffer_->Release();
-        sendBuffer_->Release();
         receiver_->Release();
     }
 
@@ -47,9 +36,8 @@ public:
         AssertSuccess(input_->StartStreams());
 
         // Enable video output with 1080i59.94.
-        AssertSuccess(output_->EnableVideoOutput(
-            bmdModeHD1080i5994, bmdVideoOutputFlagDefault
-        ));
+        AssertSuccess(output_->EnableVideoOutput(bmdModeHD1080i5994, bmdVideoOutputFlagDefault));
+        AssertSuccess(output_->StartScheduledPlayback(0, Config::TimeScale, 1));
 
         // Start a sender thread, wait for user interaction, then stop it.
         auto terminate = false;
@@ -64,44 +52,30 @@ public:
         input_->StopStreams();
         input_->DisableVideoInput();
         output_->DisableVideoOutput();
+        output_->StopScheduledPlayback(0, nullptr, Config::TimeScale);
     }
 
 private:
 
     IDeckLinkInput* input_;
     IDeckLinkOutput* output_;
-    IDeckLinkMutableVideoFrame* receiveBuffer_;
-    IDeckLinkMutableVideoFrame* sendBuffer_;
     Receiver* receiver_;
 
     void SenderThread(bool& terminate)
     {
-        for (auto count = 0u; !terminate; count += 2)
+        const auto dur = static_cast<BMDTimeValue>(Config::TimeScale * 2 / 59.94);
+
+        for (auto count = 0u; !terminate; count++)
         {
-            receiver_->LockBuffer();
+            auto* frame = receiver_->PopFrameSync();
+            if (frame == nullptr) break;
+            
+            auto time = frame->GetFrameTime();
+            time += static_cast<BMDTimeValue>(Config::TimeScale * 4 / 59.94);
 
-            std::uint32_t* p_i;
-            std::uint32_t* p_o;
+            output_->ScheduleVideoFrame(frame, time, dur, Config::TimeScale);
 
-            receiveBuffer_->GetBytes(reinterpret_cast<void**>(&p_i));
-            sendBuffer_->GetBytes(reinterpret_cast<void**>(&p_o));
-
-            for (auto i = 0; i < 1920 * 1080; i++)
-            {
-                auto c = *(p_i++);
-                auto r = (c >>  8) & 0xff;
-                auto g = (c >> 16) & 0xff;
-                auto b = (c >> 24) & 0xff;
-
-                r = (r + count) & 0xff;
-                g = (g + count) & 0xff;
-                b = (b + count) & 0xff;
-
-                *(p_o++) = 0xffu | (r << 8) | (g << 16) | (b << 24);
-            }
-
-            receiver_->UnlockBuffer();
-            output_->DisplayVideoFrameSync(sendBuffer_);
+            frame->Release();
         }
     }
 };

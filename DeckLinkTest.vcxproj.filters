@@ -30,6 +30,9 @@
     <ClInclude Include="DeckLinkTest.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="MemoryBackedFrame.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="DeckLinkTest.cpp">

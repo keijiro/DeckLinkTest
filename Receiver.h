@@ -1,15 +1,18 @@
 #pragma once
 
 #include "Common.h"
-#include <cstdio>
+#include "MemoryBackedFrame.h"
+#include <atomic>
+#include <condition_variable>
 #include <mutex>
+#include <queue>
 
-class Receiver : public IDeckLinkInputCallback
+class Receiver final : public IDeckLinkInputCallback
 {
 public:
 
     Receiver(IDeckLinkInput* input)
-    : refCount_(1), input_(input), buffer_(nullptr)
+        : refCount_(1), input_(input)
     {
         AssertSuccess(CoCreateInstance(
             CLSID_CDeckLinkVideoConversion, nullptr, CLSCTX_ALL,
@@ -19,23 +22,52 @@ public:
 
     ~Receiver()
     {
+        while (!frameQueue_.empty())
+        {
+            frameQueue_.front()->Release();
+            frameQueue_.pop();
+        }
         converter_->Release();
-        if (buffer_ != nullptr) buffer_->Release();
+    }
+
+    MemoryBackedFrame* PopFrameSync()
+    {
+        std::unique_lock<std::mutex> lock(queueMutex_);
+        queueCondition_.wait(lock);
+
+        if (frameQueue_.empty()) return nullptr;
+        
+        auto frame = frameQueue_.front();
+        frameQueue_.pop();
+        return frame;
     }
 
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) override
     {
+        if (iid == IID_IUnknown)
+        {
+            *ppv = this;
+            return S_OK;
+        }
+
+        if (iid == IID_IDeckLinkInputCallback)
+        {
+            *ppv = (IDeckLinkInputCallback*)this;
+            return S_OK;
+        }
+
+        *ppv = nullptr;
         return E_NOINTERFACE;
     }
 
     ULONG STDMETHODCALLTYPE AddRef() override
     {
-        return InterlockedIncrement(&refCount_);
+        return refCount_.fetch_add(1);
     }
 
     ULONG STDMETHODCALLTYPE Release() override
     {
-        auto val = InterlockedDecrement(&refCount_);
+        auto val = refCount_.fetch_sub(1);
         if (val == 0) delete this;
         return val;
     }
@@ -62,45 +94,28 @@ public:
         IDeckLinkAudioInputPacket* audioPacket
     ) override
     {
-        if (videoFrame != nullptr && buffer_ != nullptr)
+        if (videoFrame != nullptr)
         {
-            bufferLock_.lock();
-            converter_->ConvertFrame(videoFrame, buffer_);
-            bufferLock_.unlock();
+            std::lock_guard<std::mutex> lock(queueMutex_);
+            frameQueue_.push(new MemoryBackedFrame(videoFrame, converter_));
+            queueCondition_.notify_all();
         }
         return S_OK;
     }
 
-    void SetBuffer(IDeckLinkMutableVideoFrame* buffer)
-    {
-        if (buffer_ != nullptr) buffer->Release();
-        buffer_ = buffer;
-        if (buffer_ != nullptr) buffer->AddRef();
-    }
-
-    void LockBuffer()
-    {
-        bufferLock_.lock();
-    }
-
-    void UnlockBuffer()
-    {
-        bufferLock_.unlock();
-    }
-
 private:
 
-    ULONG refCount_;
+    std::atomic<ULONG> refCount_;
+
     IDeckLinkInput* input_;
     IDeckLinkVideoConversion* converter_;
-    IDeckLinkMutableVideoFrame* buffer_;
-    std::mutex bufferLock_;
 
-    static BMDPixelFormat FormatFlagsToPixelFormat(
-        BMDDetectedVideoInputFormatFlags flags
-    )
+    std::queue<MemoryBackedFrame*> frameQueue_;
+    std::condition_variable queueCondition_;
+    std::mutex queueMutex_;
+
+    static BMDPixelFormat FormatFlagsToPixelFormat(BMDDetectedVideoInputFormatFlags flags)
     {
-        return flags == bmdDetectedVideoInputRGB444 ?
-            bmdFormat10BitRGB : bmdFormat10BitYUV;
+        return flags == bmdDetectedVideoInputRGB444 ? bmdFormat10BitRGB : bmdFormat10BitYUV;
     }
 };

@@ -11,6 +11,14 @@ void AssertSuccess(HRESULT result)
     assert(SUCCEEDED(result));
 }
 
+// Global configuration
+class Config
+{
+public:
+    static const BMDTimeScale TimeScale = 60000;
+};
+
+// Miscellaneous utilities
 class Utility
 {
 public:
