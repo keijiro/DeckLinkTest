@@ -4,6 +4,9 @@
 #include <atomic>
 #include <vector>
 
+//
+// Custom frame class with ARGB 32-bit color format
+//
 class MemoryBackedFrame final : public IDeckLinkVideoFrame
 {
 public:
@@ -16,18 +19,13 @@ public:
     {
         width_ = input->GetWidth();
         height_ = input->GetHeight();
-
-        BMDTimeValue dur;
-        input->GetStreamTime(&time_, &dur, Config::TimeScale);
-
         memory_.resize(width_ * height_);
-        converter->ConvertFrame(input, this);
+        AssertSuccess(converter->ConvertFrame(input, this));
     }
 
-    BMDTimeValue GetFrameTime() const
-    {
-        return time_;
-    }
+    //
+    // IUnknown implementation
+    //
 
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) override
     {
@@ -59,6 +57,10 @@ public:
         return val;
     }
 
+    //
+    // IDeckLinkVideoFrame implementation
+    //
+    
     long STDMETHODCALLTYPE GetWidth() override
     {
         return width_;
@@ -106,5 +108,4 @@ private:
     std::vector<uint32_t> memory_;
     long width_;
     long height_;
-    BMDTimeValue time_;
 };

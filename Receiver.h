@@ -7,12 +7,15 @@
 #include <mutex>
 #include <queue>
 
+//
+// Frame receiver class with frame input queue
+//
 class Receiver final : public IDeckLinkInputCallback
 {
 public:
 
     Receiver(IDeckLinkInput* input)
-        : refCount_(1), input_(input)
+        : refCount_(1), input_(input), disabled_(false)
     {
         AssertSuccess(CoCreateInstance(
             CLSID_CDeckLinkVideoConversion, nullptr, CLSCTX_ALL,
@@ -30,17 +33,45 @@ public:
         converter_->Release();
     }
 
+    void StopReceiving()
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        disabled_ = true;
+        semaphore_.notify_all(); // Resume paused threads.
+    }
+
     MemoryBackedFrame* PopFrameSync()
     {
-        std::unique_lock<std::mutex> lock(queueMutex_);
-        queueCondition_.wait(lock);
+        if (disabled_) return nullptr;
 
-        if (frameQueue_.empty()) return nullptr;
+        // Immediately return the oldest entry if available.
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (!frameQueue_.empty())
+            {
+                auto frame = frameQueue_.front();
+                frameQueue_.pop();
+                return frame;
+            }
+        }
+
+        if (disabled_) return nullptr;
+
+        // Wait for a new frame arriving.
+        std::unique_lock<std::mutex> lock(mutex_);
+        semaphore_.wait(lock);
+
+        if (disabled_) return nullptr;
         
+        // Return the oldest entry.
         auto frame = frameQueue_.front();
         frameQueue_.pop();
         return frame;
     }
+
+    //
+    // IUnknown implementation
+    //
 
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) override
     {
@@ -72,6 +103,10 @@ public:
         return val;
     }
 
+    //
+    // IDeckLinkInputCallback implementation
+    //
+    
     HRESULT STDMETHODCALLTYPE VideoInputFormatChanged(
         BMDVideoInputFormatChangedEvents notificationEvents,
         IDeckLinkDisplayMode* newDisplayMode,
@@ -96,9 +131,11 @@ public:
     {
         if (videoFrame != nullptr)
         {
-            std::lock_guard<std::mutex> lock(queueMutex_);
-            frameQueue_.push(new MemoryBackedFrame(videoFrame, converter_));
-            queueCondition_.notify_all();
+            // Push the arrived frame to the frame queue.
+            auto frame = new MemoryBackedFrame(videoFrame, converter_);
+            std::lock_guard<std::mutex> lock(mutex_);
+            frameQueue_.push(frame);
+            semaphore_.notify_all();
         }
         return S_OK;
     }
@@ -111,8 +148,9 @@ private:
     IDeckLinkVideoConversion* converter_;
 
     std::queue<MemoryBackedFrame*> frameQueue_;
-    std::condition_variable queueCondition_;
-    std::mutex queueMutex_;
+    std::mutex mutex_;
+    std::condition_variable semaphore_;
+    bool disabled_;
 
     static BMDPixelFormat FormatFlagsToPixelFormat(BMDDetectedVideoInputFormatFlags flags)
     {

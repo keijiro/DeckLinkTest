@@ -16,6 +16,7 @@ class Config
 {
 public:
     static const BMDTimeScale TimeScale = 60000;
+    static const int OutputLatency = 4;
 };
 
 // Miscellaneous utilities

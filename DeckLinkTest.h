@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Common.h"
+#include "MemoryBackedFrame.h"
 #include "Receiver.h"
 #include <thread>
 
@@ -19,7 +20,6 @@ public:
 
     ~DeckLinkTest()
     {
-        // Finalization
         input_->Release();
         output_->Release();
         receiver_->Release();
@@ -33,26 +33,30 @@ public:
             bmdModeNTSC, bmdFormat10BitYUV,
             bmdVideoInputEnableFormatDetection
         ));
-        AssertSuccess(input_->StartStreams());
 
         // Enable video output with 1080i59.94.
         AssertSuccess(output_->EnableVideoOutput(bmdModeHD1080i5994, bmdVideoOutputFlagDefault));
-        AssertSuccess(output_->StartScheduledPlayback(0, Config::TimeScale, 1));
 
-        // Start a sender thread, wait for user interaction, then stop it.
-        auto terminate = false;
-        std::thread t([&terminate, this](){ SenderThread(terminate); });
+        // Start an input stream.
+        AssertSuccess(input_->StartStreams());
 
-        getchar();
+        // Launch a sender thread.
+        std::thread t([=](){ SenderThread(); });
 
-        terminate = true;
+        // Wait for user interaction.
+        std::puts("Press return to stop.");
+        std::getchar();
+
+        // Stop the input stream.
+        AssertSuccess(input_->StopStreams());
+
+        // Terminate the sender thread.
+        receiver_->StopReceiving();
         t.join();
 
-        // Stop and disable.
-        input_->StopStreams();
+        // Disable the video input/output.
         input_->DisableVideoInput();
         output_->DisableVideoOutput();
-        output_->StopScheduledPlayback(0, nullptr, Config::TimeScale);
     }
 
 private:
@@ -61,21 +65,32 @@ private:
     IDeckLinkOutput* output_;
     Receiver* receiver_;
 
-    void SenderThread(bool& terminate)
+    void SenderThread()
     {
-        const auto dur = static_cast<BMDTimeValue>(Config::TimeScale * 2 / 59.94);
+        const auto frameDuration = static_cast<BMDTimeValue>(Config::TimeScale * 2 / 59.94);
 
-        for (auto count = 0u; !terminate; count++)
+        // Start scheduled playback immediately.
+        AssertSuccess(output_->StartScheduledPlayback(0, Config::TimeScale, 1));
+
+        for (auto count = 0u;; count++)
         {
+            // Retrieve a frame from the receiver frame queue.
             auto* frame = receiver_->PopFrameSync();
+
+            // It returns null when the stream was terminated.
             if (frame == nullptr) break;
             
-            auto time = frame->GetFrameTime();
-            time += static_cast<BMDTimeValue>(Config::TimeScale * 4 / 59.94);
+            // Determine the output frame time with adding the output latency.
+            auto time = static_cast<BMDTimeValue>(Config::TimeScale * 2 * (count + Config::OutputLatency) / 59.94);
 
-            output_->ScheduleVideoFrame(frame, time, dur, Config::TimeScale);
+            // Schedule the output frame.
+            AssertSuccess(output_->ScheduleVideoFrame(frame, time, frameDuration, Config::TimeScale));
 
+            // The ownership of the frame was moved to output_, so release it.
             frame->Release();
         }
+
+        // Stop the scheduled playback.
+        output_->StopScheduledPlayback(0, nullptr, Config::TimeScale);
     }
 };
