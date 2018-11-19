@@ -161,9 +161,9 @@
   <ItemGroup>
     <ClInclude Include="Common.h" />
     <ClInclude Include="DeckLinkAPI_h.h" />
-    <ClInclude Include="DeckLinkTest.h" />
     <ClInclude Include="MemoryBackedFrame.h" />
     <ClInclude Include="Receiver.h" />
+    <ClInclude Include="Sender.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="DeckLinkAPI_i.c" />

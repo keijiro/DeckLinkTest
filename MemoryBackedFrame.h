@@ -4,40 +4,33 @@
 #include <atomic>
 #include <vector>
 
-//
-// Custom frame class with ARGB 32-bit color format
-//
 class MemoryBackedFrame final : public IDeckLinkVideoFrame
 {
 public:
 
-    MemoryBackedFrame(
-        IDeckLinkVideoInputFrame* input,
-        IDeckLinkVideoConversion* converter
-    )
+    MemoryBackedFrame(long width, long height)
         : refCount_(1)
     {
-        width_ = input->GetWidth();
-        height_ = input->GetHeight();
-        memory_.resize(width_ * height_);
-        AssertSuccess(converter->ConvertFrame(input, this));
+        width_ = width;
+        height_ = height;
+        memory_.resize(static_cast<std::size_t>(width_) * height_);
     }
 
-    //
     // IUnknown implementation
-    //
 
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) override
     {
         if (iid == IID_IUnknown)
         {
             *ppv = this;
+            AddRef();
             return S_OK;
         }
 
         if (iid == IID_IDeckLinkVideoFrame)
         {
             *ppv = (IDeckLinkVideoFrame*)this;
+            AddRef();
             return S_OK;
         }
 
@@ -53,13 +46,11 @@ public:
     ULONG STDMETHODCALLTYPE Release() override
     {
         auto val = refCount_.fetch_sub(1);
-        if (val == 0) delete this;
+        if (val == 1) delete this;
         return val;
     }
 
-    //
     // IDeckLinkVideoFrame implementation
-    //
     
     long STDMETHODCALLTYPE GetWidth() override
     {

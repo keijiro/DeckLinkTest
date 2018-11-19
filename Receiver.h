@@ -3,20 +3,19 @@
 #include "Common.h"
 #include "MemoryBackedFrame.h"
 #include <atomic>
-#include <condition_variable>
 #include <mutex>
 #include <queue>
 
-//
-// Frame receiver class with frame input queue
-//
 class Receiver final : public IDeckLinkInputCallback
 {
 public:
 
-    Receiver(IDeckLinkInput* input)
-        : refCount_(1), input_(input), disabled_(false)
+    // Constructor/destructor
+
+    Receiver()
+        : refCount_(1), input_(nullptr), converter_(nullptr)
     {
+        // Create a format converter instance.
         AssertSuccess(CoCreateInstance(
             CLSID_CDeckLinkVideoConversion, nullptr, CLSCTX_ALL,
             IID_IDeckLinkVideoConversion, reinterpret_cast<void**>(&converter_)
@@ -25,65 +24,88 @@ public:
 
     ~Receiver()
     {
-        while (!frameQueue_.empty())
-        {
-            frameQueue_.front()->Release();
-            frameQueue_.pop();
-        }
+        assert(input_ == nullptr); // The input should have been stopped.
+
+        // Destroy the converter instance.
         converter_->Release();
+    }
+
+    // Public methods
+
+    void StartReceiving(IDeckLinkInput* input)
+    {
+        assert(input_ == nullptr);
+
+        // Start depending the input object.
+        input_ = input;
+        input_->AddRef();
+
+        // Start getting callback from the input object.
+        AssertSuccess(input_->SetCallback(this));
+
+        // Enable the video input with a default video mode
+        // (it will be changed by input mode detection).
+        AssertSuccess(input_->EnableVideoInput(
+            bmdModeNTSC, bmdFormat10BitYUV,
+            bmdVideoInputEnableFormatDetection
+        ));
+
+        // Start the input stream.
+        AssertSuccess(input_->StartStreams());
     }
 
     void StopReceiving()
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        disabled_ = true;
-        semaphore_.notify_all(); // Resume paused threads.
-    }
+        assert(input_ != nullptr);
 
-    MemoryBackedFrame* PopFrameSync()
-    {
-        if (disabled_) return nullptr;
+        // Stop the input stream.
+        AssertSuccess(input_->StopStreams());
+        AssertSuccess(input_->SetCallback(nullptr));
+        AssertSuccess(input_->DisableVideoInput());
 
-        // Immediately return the oldest entry if available.
+        // Dispose all the queued frames.
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            if (!frameQueue_.empty())
+            while (!frameQueue_.empty())
             {
-                auto frame = frameQueue_.front();
+                frameQueue_.front()->Release();
                 frameQueue_.pop();
-                return frame;
             }
         }
 
-        if (disabled_) return nullptr;
+        // Release the input object.
+        input_->Release();
+        input_ = nullptr;
+    }
 
-        // Wait for a new frame arriving.
-        std::unique_lock<std::mutex> lock(mutex_);
-        semaphore_.wait(lock);
+    size_t CountQueuedFrames() const
+    {
+        return frameQueue_.size();
+    }
 
-        if (disabled_) return nullptr;
-        
-        // Return the oldest entry.
+    MemoryBackedFrame* PopFrame()
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
         auto frame = frameQueue_.front();
         frameQueue_.pop();
         return frame;
     }
 
-    //
     // IUnknown implementation
-    //
 
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) override
     {
         if (iid == IID_IUnknown)
         {
             *ppv = this;
+            AddRef();
             return S_OK;
         }
 
         if (iid == IID_IDeckLinkInputCallback)
         {
             *ppv = (IDeckLinkInputCallback*)this;
+            AddRef();
             return S_OK;
         }
 
@@ -99,24 +121,23 @@ public:
     ULONG STDMETHODCALLTYPE Release() override
     {
         auto val = refCount_.fetch_sub(1);
-        if (val == 0) delete this;
+        if (val == 1) delete this;
         return val;
     }
 
-    //
     // IDeckLinkInputCallback implementation
-    //
-    
+
     HRESULT STDMETHODCALLTYPE VideoInputFormatChanged(
-        BMDVideoInputFormatChangedEvents notificationEvents,
-        IDeckLinkDisplayMode* newDisplayMode,
-        BMDDetectedVideoInputFormatFlags detectedSignalFlags
+        BMDVideoInputFormatChangedEvents events,
+        IDeckLinkDisplayMode* mode,
+        BMDDetectedVideoInputFormatFlags flags
     ) override
     {
+        // Switch to the notified display mode.
         input_->PauseStreams();
         input_->EnableVideoInput(
-            newDisplayMode->GetDisplayMode(),
-            FormatFlagsToPixelFormat(detectedSignalFlags),
+            mode->GetDisplayMode(),
+            bmdFormat10BitYUV,
             bmdVideoInputEnableFormatDetection
         );
         input_->FlushStreams();
@@ -131,11 +152,13 @@ public:
     {
         if (videoFrame != nullptr)
         {
-            // Push the arrived frame to the frame queue.
-            auto frame = new MemoryBackedFrame(videoFrame, converter_);
+            // Convert and push the arrived frame to the frame queue.
+            auto frame = new MemoryBackedFrame(
+                videoFrame->GetWidth(), videoFrame->GetHeight()
+            );
+            AssertSuccess(converter_->ConvertFrame(videoFrame, frame));
             std::lock_guard<std::mutex> lock(mutex_);
             frameQueue_.push(frame);
-            semaphore_.notify_all();
         }
         return S_OK;
     }
@@ -143,17 +166,8 @@ public:
 private:
 
     std::atomic<ULONG> refCount_;
-
     IDeckLinkInput* input_;
     IDeckLinkVideoConversion* converter_;
-
     std::queue<MemoryBackedFrame*> frameQueue_;
     std::mutex mutex_;
-    std::condition_variable semaphore_;
-    bool disabled_;
-
-    static BMDPixelFormat FormatFlagsToPixelFormat(BMDDetectedVideoInputFormatFlags flags)
-    {
-        return flags == bmdDetectedVideoInputRGB444 ? bmdFormat10BitRGB : bmdFormat10BitYUV;
-    }
 };

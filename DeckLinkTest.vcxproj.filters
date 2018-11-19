@@ -27,10 +27,10 @@
     <ClInclude Include="Receiver.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="DeckLinkTest.h">
+    <ClInclude Include="MemoryBackedFrame.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="MemoryBackedFrame.h">
+    <ClInclude Include="Sender.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
